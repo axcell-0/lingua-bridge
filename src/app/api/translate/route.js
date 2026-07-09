@@ -20,6 +20,9 @@ export async function POST(request) {
   if (text.length > 500) {
     return Response.json({ error: 'Text is too long.' }, { status: 400 });
   }
+  if (sourceLang === targetLang) {
+  return Response.json({ translated: text }); // no translation needed
+}
 
   const src = MYMEMORY_CODES[sourceLang] || sourceLang;
   const tgt = MYMEMORY_CODES[targetLang] || targetLang;
