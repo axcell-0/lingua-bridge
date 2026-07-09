@@ -205,12 +205,18 @@ export default function RoomPage() {
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        console.log('[HOST] Offer created and set locally. Signaling state:', pc.signalingState);
         await set(ref(rtdb, `rooms/${code}/offer`), { sdp: offer.sdp, type: offer.type });
+        console.log('[HOST] Offer written to Firebase.');
         setStatus('Waiting for the other person to join…');
 
         const answerUnsub = onValue(ref(rtdb, `rooms/${code}/answer`), async (snap) => {
           const answer = snap.val();
-          if (answer && pc.signalingState === 'have-local-offer') await pc.setRemoteDescription(answer);
+          console.log('[HOST] Answer listener fired. Answer present?', !!answer, 'Signaling state:', pc.signalingState);
+          if (answer && pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(answer);
+            console.log('[HOST] Remote description (answer) set. New signaling state:', pc.signalingState);
+          }
         });
         unsubscribers.push(answerUnsub);
       } else {
@@ -219,11 +225,15 @@ export default function RoomPage() {
 
         const offerUnsub = onValue(ref(rtdb, `rooms/${code}/offer`), async (snap) => {
           const offer = snap.val();
+          console.log('[GUEST] Offer listener fired. Offer present?', !!offer, 'Already have remote desc?', !!pc.currentRemoteDescription);
           if (offer && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(offer);
+            console.log('[GUEST] Remote description (offer) set. Signaling state:', pc.signalingState);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
+            console.log('[GUEST] Answer created and set locally. Signaling state:', pc.signalingState);
             await set(ref(rtdb, `rooms/${code}/answer`), { sdp: answer.sdp, type: answer.type });
+            console.log('[GUEST] Answer written to Firebase.');
           }
         });
         unsubscribers.push(offerUnsub);
