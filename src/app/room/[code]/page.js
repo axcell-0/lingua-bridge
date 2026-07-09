@@ -134,6 +134,22 @@ export default function RoomPage() {
     }
   }
 
+  function handleLeave () {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) { }
+      recognitionRef.current = null;
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
+    }
+    router.push('/');
+  }
+
   useEffect(() => {
     let unsubscribers = [];
 
@@ -234,7 +250,7 @@ export default function RoomPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2 bg-black rounded-xl overflow-hidden mb-3">
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [transform:scaleX(-1)]" />
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [scaleX(-1)]" />
           <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video object-cover bg-gray-900" />
         </div>
 
@@ -255,7 +271,7 @@ export default function RoomPage() {
           </div>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 min-h-[100px] mb-3 space-y-1">
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 min-h-25 mb-3 space-y-1">
           {captions.map((c) => (
             <div key={c.id} className={`text-sm p-2 rounded-md ${c.who === 'mine' ? 'bg-indigo-950 border-l-2 border-indigo-500' : 'bg-amber-950 border-l-2 border-amber-500 text-right'}`}>
               <span className="text-xs text-gray-500 block">{c.tag}</span>
@@ -273,7 +289,7 @@ export default function RoomPage() {
             className={`rounded-full px-5 py-2 text-sm font-medium ${speakOn ? 'bg-indigo-600' : 'bg-gray-800 border border-gray-700'}`}>
             {speakOn ? 'Reading aloud' : 'Read aloud'}
           </button>
-          <button onClick={() => router.push('/')} className="bg-red-600 hover:bg-red-500 rounded-full px-5 py-2 text-sm font-medium">
+          <button onClick={handleLeave} className="bg-red-600 hover:bg-red-500 rounded-full px-5 py-2 text-sm font-medium">
             Leave
           </button>
         </div>
