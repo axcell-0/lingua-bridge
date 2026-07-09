@@ -121,7 +121,7 @@ export default function RoomPage() {
         if (text) handleRecognizedText(text);
       };
       recognition.onend = () => {
-        if (recognitionRef.current) { try { recognition.start(); } catch (e) {} }
+        if (recognitionRef.current) { try { recognition.start(); } catch (e) { } }
       };
       recognitionRef.current = recognition;
       recognition.start();
@@ -134,7 +134,7 @@ export default function RoomPage() {
     }
   }
 
-  function handleLeave () {
+  function handleLeave() {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -173,7 +173,15 @@ export default function RoomPage() {
       localStreamRef.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:openrelay.metered.ca:80' },
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+      });
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
@@ -188,7 +196,7 @@ export default function RoomPage() {
 
       const candUnsub = onChildAdded(ref(rtdb, `rooms/${code}/candidates/${otherRole}`), (snap) => {
         const candidate = snap.val();
-        if (candidate) pc.addIceCandidate(candidate).catch(() => {});
+        if (candidate) pc.addIceCandidate(candidate).catch(() => { });
       });
       unsubscribers.push(candUnsub);
 
@@ -226,7 +234,7 @@ export default function RoomPage() {
 
     return () => {
       unsubscribers.forEach((unsub) => typeof unsub === 'function' && unsub());
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) { } }
       if (pcRef.current) pcRef.current.close();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     };
