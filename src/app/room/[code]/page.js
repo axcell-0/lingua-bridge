@@ -43,6 +43,7 @@ export default function RoomPage() {
   const myCaptionLangRef = useRef(myCaptionLang);
   const remoteCaptionLangRef = useRef(null);
   const speakOnRef = useRef(speakOn);
+  const pendingCandidatesRef = useRef([]);
 
   useEffect(() => { mySpokenLangRef.current = mySpokenLang; }, [mySpokenLang]);
   useEffect(() => { myCaptionLangRef.current = myCaptionLang; }, [myCaptionLang]);
@@ -126,7 +127,7 @@ export default function RoomPage() {
         if (text) handleRecognizedText(text);
       };
       recognition.onend = () => {
-        if (recognitionRef.current) { try { recognition.start(); } catch (e) {} }
+        if (recognitionRef.current) { try { recognition.start(); } catch (e) { } }
       };
       recognitionRef.current = recognition;
       recognition.start();
@@ -141,7 +142,7 @@ export default function RoomPage() {
 
   function handleLeave() {
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) {}
+      try { recognitionRef.current.stop(); } catch (e) { }
       recognitionRef.current = null;
     }
     if (pcRef.current) pcRef.current.close();
@@ -206,10 +207,23 @@ export default function RoomPage() {
 
       const candUnsub = onChildAdded(ref(rtdb, `rooms/${code}/candidates/${otherRole}`), (snap) => {
         const candidate = snap.val();
-        console.log(`[${myRole.toUpperCase()}] Received remote candidate — type: ${candidate?.type}`);
-        if (candidate) pc.addIceCandidate(candidate).catch((err) => console.log('addIceCandidate error:', err));
+        if (!candidate) return;
+        if (pc.remoteDescription) {
+          pc.addIceCandidate(candidate).catch((err) => console.log('addIceCandidate error:', err));
+        } else {
+          console.log(`[${myRole.toUpperCase()}] Remote description not ready yet — queuing candidate.`);
+          pendingCandidatesRef.current.push(candidate);
+        }
       });
       unsubscribers.push(candUnsub);
+
+      async function flushPendingCandidates() {
+        const queued = pendingCandidatesRef.current;
+        pendingCandidatesRef.current = [];
+        for (const candidate of queued) {
+          try { await pc.addIceCandidate(candidate); } catch (err) { console.log('addIceCandidate (queued) error:', err); }
+        }
+      }
 
       if (isHost) {
         setupDataChannel(pc.createDataChannel('captions'));
@@ -223,6 +237,7 @@ export default function RoomPage() {
           const answer = snap.val();
           if (answer && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(answer);
+            await flushPendingCandidates();
           }
         });
         unsubscribers.push(answerUnsub);
@@ -234,6 +249,7 @@ export default function RoomPage() {
           const offer = snap.val();
           if (offer && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(offer);
+            await flushPendingCandidates();
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             await set(ref(rtdb, `rooms/${code}/answer`), { sdp: answer.sdp, type: answer.type });
@@ -247,7 +263,7 @@ export default function RoomPage() {
 
     return () => {
       unsubscribers.forEach((unsub) => typeof unsub === 'function' && unsub());
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) { } }
       if (pcRef.current) pcRef.current.close();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     };
