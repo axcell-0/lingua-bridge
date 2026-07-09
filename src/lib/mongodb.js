@@ -1,0 +1,32 @@
+import mongoose from "mongoose";
+
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+    throw new Error("Please define MONGODB_URI in .env.local");
+}
+//reuse the connection across hot reloads in dev and across severless function invocations in production.
+let cached = global.mongoose;
+
+if (!cached) {
+    cached = global.mongoose = {conn: null, promise: null};
+}
+
+async function connectDB() {
+    if (cached.conn) {
+        return cached.conn; // already connected, reuse it
+    }
+
+    if (!cached.promise) {
+        cached.promise = mongoose.connect(MONGODB_URI, {
+            bufferCommands: false,
+        }).then((mongooseInstance) => {
+            return mongooseInstance;
+        })
+    }
+
+    cached.conn = await cached.promise;
+    return cached.conn;
+}
+
+export default connectDB;
