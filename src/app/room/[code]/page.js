@@ -36,7 +36,6 @@ export default function RoomPage() {
   const [speakOn, setSpeakOn] = useState(false);
   const [mySpokenLang, setMySpokenLang] = useState('en');
   const [myCaptionLang, setMyCaptionLang] = useState('fr');
-  const [remoteName, setRemoteName] = useState('');
 
   // Refs mirror the state above so callbacks set up once (recognition,
   // data channel handlers) always read the CURRENT value, not a stale one.
@@ -63,11 +62,15 @@ export default function RoomPage() {
 
   function setupDataChannel(channel) {
     dataChannelRef.current = channel;
-    channel.onopen = () => sendMeta();
+    channel.onopen = () => {
+      console.log('[DATACHANNEL] Open.');
+      sendMeta();
+    };
     channel.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'meta') {
         remoteCaptionLangRef.current = msg.captionLang;
+        console.log('[DATACHANNEL] Received meta. Remote wants captions in:', msg.captionLang);
       } else if (msg.type === 'caption') {
         addCaption('theirs', msg.translated, `${langName(msg.sourceLang)} → ${langName(myCaptionLangRef.current)}`);
         if (speakOnRef.current) speak(msg.translated, myCaptionLangRef.current);
@@ -99,6 +102,8 @@ export default function RoomPage() {
       const ch = dataChannelRef.current;
       if (res.ok && ch && ch.readyState === 'open') {
         ch.send(JSON.stringify({ type: 'caption', translated: data.translated, sourceLang: mySpokenLangRef.current }));
+      } else if (!res.ok) {
+        console.error('Translate API error:', data);
       }
     } catch (err) {
       console.error('Translate request failed:', err);
@@ -121,7 +126,7 @@ export default function RoomPage() {
         if (text) handleRecognizedText(text);
       };
       recognition.onend = () => {
-        if (recognitionRef.current) { try { recognition.start(); } catch (e) { } }
+        if (recognitionRef.current) { try { recognition.start(); } catch (e) {} }
       };
       recognitionRef.current = recognition;
       recognition.start();
@@ -136,17 +141,11 @@ export default function RoomPage() {
 
   function handleLeave() {
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) { }
+      try { recognitionRef.current.stop(); } catch (e) {}
       recognitionRef.current = null;
     }
-    if (pcRef.current) {
-      pcRef.current.close();
-    }
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
+    if (pcRef.current) pcRef.current.close();
+    if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     router.push('/');
   }
 
@@ -185,18 +184,30 @@ export default function RoomPage() {
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
+      pc.ontrack = (e) => {
+        console.log(`[${myRole.toUpperCase()}] Remote track received.`);
+        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
+      };
+
       pc.oniceconnectionstatechange = () => {
+        console.log(`[${myRole.toUpperCase()}] ICE connection state:`, pc.iceConnectionState);
         if (['connected', 'completed'].includes(pc.iceConnectionState)) setStatus('Connected');
         else if (['disconnected', 'failed'].includes(pc.iceConnectionState)) setStatus('Connection lost…');
       };
+
       pc.onicecandidate = (e) => {
-        if (e.candidate) push(ref(rtdb, `rooms/${code}/candidates/${myRole}`), e.candidate.toJSON());
+        if (e.candidate) {
+          console.log(`[${myRole.toUpperCase()}] Found candidate — type: ${e.candidate.type}, protocol: ${e.candidate.protocol}`);
+          push(ref(rtdb, `rooms/${code}/candidates/${myRole}`), e.candidate.toJSON());
+        } else {
+          console.log(`[${myRole.toUpperCase()}] ICE gathering complete.`);
+        }
       };
 
       const candUnsub = onChildAdded(ref(rtdb, `rooms/${code}/candidates/${otherRole}`), (snap) => {
         const candidate = snap.val();
-        if (candidate) pc.addIceCandidate(candidate).catch(() => { });
+        console.log(`[${myRole.toUpperCase()}] Received remote candidate — type: ${candidate?.type}`);
+        if (candidate) pc.addIceCandidate(candidate).catch((err) => console.log('addIceCandidate error:', err));
       });
       unsubscribers.push(candUnsub);
 
@@ -205,17 +216,13 @@ export default function RoomPage() {
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        console.log('[HOST] Offer created and set locally. Signaling state:', pc.signalingState);
         await set(ref(rtdb, `rooms/${code}/offer`), { sdp: offer.sdp, type: offer.type });
-        console.log('[HOST] Offer written to Firebase.');
         setStatus('Waiting for the other person to join…');
 
         const answerUnsub = onValue(ref(rtdb, `rooms/${code}/answer`), async (snap) => {
           const answer = snap.val();
-          console.log('[HOST] Answer listener fired. Answer present?', !!answer, 'Signaling state:', pc.signalingState);
           if (answer && pc.signalingState === 'have-local-offer') {
             await pc.setRemoteDescription(answer);
-            console.log('[HOST] Remote description (answer) set. New signaling state:', pc.signalingState);
           }
         });
         unsubscribers.push(answerUnsub);
@@ -225,15 +232,11 @@ export default function RoomPage() {
 
         const offerUnsub = onValue(ref(rtdb, `rooms/${code}/offer`), async (snap) => {
           const offer = snap.val();
-          console.log('[GUEST] Offer listener fired. Offer present?', !!offer, 'Already have remote desc?', !!pc.currentRemoteDescription);
           if (offer && !pc.currentRemoteDescription) {
             await pc.setRemoteDescription(offer);
-            console.log('[GUEST] Remote description (offer) set. Signaling state:', pc.signalingState);
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            console.log('[GUEST] Answer created and set locally. Signaling state:', pc.signalingState);
             await set(ref(rtdb, `rooms/${code}/answer`), { sdp: answer.sdp, type: answer.type });
-            console.log('[GUEST] Answer written to Firebase.');
           }
         });
         unsubscribers.push(offerUnsub);
@@ -244,7 +247,7 @@ export default function RoomPage() {
 
     return () => {
       unsubscribers.forEach((unsub) => typeof unsub === 'function' && unsub());
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) { } }
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
       if (pcRef.current) pcRef.current.close();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     };
@@ -268,7 +271,7 @@ export default function RoomPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-2 bg-black rounded-xl overflow-hidden mb-3">
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [scaleX(-1)]" />
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [transform:scaleX(-1)]" />
           <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video object-cover bg-gray-900" />
         </div>
 
@@ -289,7 +292,7 @@ export default function RoomPage() {
           </div>
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 min-h-25 mb-3 space-y-1">
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 min-h-[100px] mb-3 space-y-1">
           {captions.map((c) => (
             <div key={c.id} className={`text-sm p-2 rounded-md ${c.who === 'mine' ? 'bg-indigo-950 border-l-2 border-indigo-500' : 'bg-amber-950 border-l-2 border-amber-500 text-right'}`}>
               <span className="text-xs text-gray-500 block">{c.tag}</span>
