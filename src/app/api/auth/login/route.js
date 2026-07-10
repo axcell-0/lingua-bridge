@@ -2,10 +2,18 @@ import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { rateLimit } from '@/lib/rateLimit';
 import { UNSTABLE_REVALIDATE_RENAME_ERROR } from 'next/dist/lib/constants';
 
 export async function POST(request) {
     try {
+        const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+        const { allowed } = rateLimit(`login:${ip}`, 5, 60_000);
+
+        if (!allowed) {
+            return Response.json({ error: 'Too many login attempts, please wait a moment and try again.'}, { status: 429});
+        }
+        
         const { email, password } = await request.json();
 
         if (!email || !password) {

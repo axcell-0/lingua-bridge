@@ -1,4 +1,5 @@
 import { getSessionUser } from '@/lib/auth';
+import { rateLimit } from '@/lib/rateLimit';
 
 // MyMemory's language codes — mostly standard, a couple of small adjustments
 const MYMEMORY_CODES = {
@@ -10,6 +11,11 @@ export async function POST(request) {
   const session = getSessionUser(request);
   if (!session) {
     return Response.json({ error: 'Not authenticated.' }, { status: 401 });
+  }
+
+  const { allowed } = rateLimit(`translate:${session.userId}`, 20, 60_000);
+  if (!allowed) {
+    return Response.json({ error: 'Too many request. Please slow down.'}, { status: 429 });
   }
 
   const { text, sourceLang, targetLang } = await request.json();
