@@ -129,6 +129,12 @@ export default function RoomPage() {
       recognition.onend = () => {
         if (recognitionRef.current) { try { recognition.start(); } catch (e) { } }
       };
+      recognition.onerror = (e) => {
+        console.log('[SPEECH RECOGNITION ERROR]', e.error);
+      };
+      recognition.onstart = () => {
+        console.log('[SPEECH RECOGNITION] Started listening.');
+      };
       recognitionRef.current = recognition;
       recognition.start();
       setCaptionsOn(true);
