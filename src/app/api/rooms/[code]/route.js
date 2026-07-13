@@ -1,6 +1,7 @@
 import connectDB from '@/lib/mongodb';
 import Room from '@/models/Room';
 import { getSessionUser } from '@/lib/auth';
+import { isValidRoomCode } from '@/lib/validators';
 
 export async function GET(request, { params }) {
     const session = getSessionUser(request);
@@ -9,6 +10,9 @@ export async function GET(request, { params }) {
     }
 
     const { code } = await params;
+    if (!isValidRoomCode(code.toUpperCase())) {
+        return Response.json({ error: 'Invalide room code format.' } , { status: 400 });
+    }
     await connectDB();
 
     const room = await Room.findOne({ code: code.toUpperCase() })

@@ -16,6 +16,7 @@ const LANGS = [
   { code: 'ja', name: 'Japanese', speech: 'ja-JP' },
   { code: 'ru', name: 'Russian', speech: 'ru-RU' },
 ];
+const REACTIONS = ['👍', '❤️', '😂', '😮', '👏'];
 const langName = (code) => LANGS.find((l) => l.code === code)?.name || code;
 const langSpeech = (code) => LANGS.find((l) => l.code === code)?.speech || 'en-US';
 
@@ -28,6 +29,7 @@ export default function RoomPage() {
   const localStreamRef = useRef(null);
   const dataChannelRef = useRef(null);
   const recognitionRef = useRef(null);
+  const pendingCandidatesRef = useRef([]);
 
   const [status, setStatus] = useState('Setting up…');
   const [error, setError] = useState('');
@@ -36,23 +38,19 @@ export default function RoomPage() {
   const [speakOn, setSpeakOn] = useState(false);
   const [mySpokenLang, setMySpokenLang] = useState('en');
   const [myCaptionLang, setMyCaptionLang] = useState('fr');
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [floatingReactions, setFloatingReactions] = useState([]);
 
-  // Refs mirror the state above so callbacks set up once (recognition,
-  // data channel handlers) always read the CURRENT value, not a stale one.
   const mySpokenLangRef = useRef(mySpokenLang);
   const myCaptionLangRef = useRef(myCaptionLang);
   const remoteCaptionLangRef = useRef(null);
   const speakOnRef = useRef(speakOn);
-  const pendingCandidatesRef = useRef([]);
 
   useEffect(() => { mySpokenLangRef.current = mySpokenLang; }, [mySpokenLang]);
   useEffect(() => { myCaptionLangRef.current = myCaptionLang; }, [myCaptionLang]);
   useEffect(() => { speakOnRef.current = speakOn; }, [speakOn]);
-
-  // Re-announce our language choice if it changes mid-call
-  useEffect(() => {
-    sendMeta();
-  }, [mySpokenLang, myCaptionLang]);
+  useEffect(() => { sendMeta(); }, [mySpokenLang, myCaptionLang]);
 
   function sendMeta() {
     const ch = dataChannelRef.current;
@@ -63,24 +61,24 @@ export default function RoomPage() {
 
   function setupDataChannel(channel) {
     dataChannelRef.current = channel;
-    channel.onopen = () => {
-      console.log('[DATACHANNEL] Open.');
-      sendMeta();
-    };
+    channel.onopen = () => sendMeta();
     channel.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'meta') {
         remoteCaptionLangRef.current = msg.captionLang;
-        console.log('[DATACHANNEL] Received meta. Remote wants captions in:', msg.captionLang);
       } else if (msg.type === 'caption') {
         addCaption('theirs', msg.translated, `${langName(msg.sourceLang)} → ${langName(myCaptionLangRef.current)}`);
         if (speakOnRef.current) speak(msg.translated, myCaptionLangRef.current);
+      } else if (msg.type === 'chat') {
+        setMessages((prev) => [...prev, { id: Date.now() + Math.random(), from: 'theirs', text: msg.text }]);
+      } else if (msg.type === 'reaction') {
+        showReaction('theirs', msg.emoji);
       }
     };
   }
 
   function addCaption(who, text, tag) {
-    setCaptions((prev) => [...prev.slice(-5), { who, text, tag, id: Date.now() }]);
+    setCaptions((prev) => [...prev.slice(-5), { who, text, tag, id: Date.now() + Math.random() }]);
   }
 
   function speak(text, langCode) {
@@ -88,6 +86,33 @@ export default function RoomPage() {
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = langSpeech(langCode);
     window.speechSynthesis.speak(utter);
+  }
+
+  function sendChat() {
+    const text = chatInput.trim();
+    if (!text) return;
+    const ch = dataChannelRef.current;
+    if (ch && ch.readyState === 'open') {
+      ch.send(JSON.stringify({ type: 'chat', text }));
+    }
+    setMessages((prev) => [...prev, { id: Date.now() + Math.random(), from: 'mine', text }]);
+    setChatInput('');
+  }
+
+  function showReaction(side, emoji) {
+    const id = Date.now() + Math.random();
+    setFloatingReactions((prev) => [...prev, { id, emoji, side }]);
+    setTimeout(() => {
+      setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
+    }, 1800);
+  }
+
+  function sendReaction(emoji) {
+    const ch = dataChannelRef.current;
+    if (ch && ch.readyState === 'open') {
+      ch.send(JSON.stringify({ type: 'reaction', emoji }));
+    }
+    showReaction('mine', emoji);
   }
 
   async function handleRecognizedText(text) {
@@ -103,8 +128,6 @@ export default function RoomPage() {
       const ch = dataChannelRef.current;
       if (res.ok && ch && ch.readyState === 'open') {
         ch.send(JSON.stringify({ type: 'caption', translated: data.translated, sourceLang: mySpokenLangRef.current }));
-      } else if (!res.ok) {
-        console.error('Translate API error:', data);
       }
     } catch (err) {
       console.error('Translate request failed:', err);
@@ -127,13 +150,7 @@ export default function RoomPage() {
         if (text) handleRecognizedText(text);
       };
       recognition.onend = () => {
-        if (recognitionRef.current) { try { recognition.start(); } catch (e) { } }
-      };
-      recognition.onerror = (e) => {
-        console.log('[SPEECH RECOGNITION ERROR]', e.error);
-      };
-      recognition.onstart = () => {
-        console.log('[SPEECH RECOGNITION] Started listening.');
+        if (recognitionRef.current) { try { recognition.start(); } catch (e) {} }
       };
       recognitionRef.current = recognition;
       recognition.start();
@@ -147,10 +164,7 @@ export default function RoomPage() {
   }
 
   function handleLeave() {
-    if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch (e) { }
-      recognitionRef.current = null;
-    }
+    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
     if (pcRef.current) pcRef.current.close();
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     router.push('/');
@@ -191,33 +205,21 @@ export default function RoomPage() {
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      pc.ontrack = (e) => {
-        console.log(`[${myRole.toUpperCase()}] Remote track received.`);
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
-      };
-
+      pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
       pc.oniceconnectionstatechange = () => {
-        console.log(`[${myRole.toUpperCase()}] ICE connection state:`, pc.iceConnectionState);
         if (['connected', 'completed'].includes(pc.iceConnectionState)) setStatus('Connected');
         else if (['disconnected', 'failed'].includes(pc.iceConnectionState)) setStatus('Connection lost…');
       };
-
       pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          console.log(`[${myRole.toUpperCase()}] Found candidate — type: ${e.candidate.type}, protocol: ${e.candidate.protocol}`);
-          push(ref(rtdb, `rooms/${code}/candidates/${myRole}`), e.candidate.toJSON());
-        } else {
-          console.log(`[${myRole.toUpperCase()}] ICE gathering complete.`);
-        }
+        if (e.candidate) push(ref(rtdb, `rooms/${code}/candidates/${myRole}`), e.candidate.toJSON());
       };
 
       const candUnsub = onChildAdded(ref(rtdb, `rooms/${code}/candidates/${otherRole}`), (snap) => {
         const candidate = snap.val();
         if (!candidate) return;
         if (pc.remoteDescription) {
-          pc.addIceCandidate(candidate).catch((err) => console.log('addIceCandidate error:', err));
+          pc.addIceCandidate(candidate).catch(() => {});
         } else {
-          console.log(`[${myRole.toUpperCase()}] Remote description not ready yet — queuing candidate.`);
           pendingCandidatesRef.current.push(candidate);
         }
       });
@@ -227,7 +229,7 @@ export default function RoomPage() {
         const queued = pendingCandidatesRef.current;
         pendingCandidatesRef.current = [];
         for (const candidate of queued) {
-          try { await pc.addIceCandidate(candidate); } catch (err) { console.log('addIceCandidate (queued) error:', err); }
+          try { await pc.addIceCandidate(candidate); } catch (e) {}
         }
       }
 
@@ -269,7 +271,7 @@ export default function RoomPage() {
 
     return () => {
       unsubscribers.forEach((unsub) => typeof unsub === 'function' && unsub());
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) { } }
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
       if (pcRef.current) pcRef.current.close();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     };
@@ -292,9 +294,18 @@ export default function RoomPage() {
           <span className="text-sm text-gray-300">{status}</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 bg-black rounded-xl overflow-hidden mb-3">
+        <div className="relative grid grid-cols-2 gap-2 bg-black rounded-xl overflow-hidden mb-3">
           <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [transform:scaleX(-1)]" />
           <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video object-cover bg-gray-900" />
+
+          {floatingReactions.map((r) => (
+            <span
+              key={r.id}
+              className={`absolute bottom-3 text-3xl animate-bounce pointer-events-none ${r.side === 'mine' ? 'left-3' : 'right-3'}`}
+            >
+              {r.emoji}
+            </span>
+          ))}
         </div>
 
         <div className="flex gap-2 mb-3">
@@ -321,6 +332,41 @@ export default function RoomPage() {
               {c.text}
             </div>
           ))}
+        </div>
+
+        <div className="flex gap-2 justify-center mb-3">
+          {REACTIONS.map((emoji) => (
+            <button
+              key={emoji}
+              onClick={() => sendReaction(emoji)}
+              className="text-xl bg-gray-800 border border-gray-700 rounded-full w-10 h-10 hover:bg-gray-700"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+
+        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-3">
+          <div className="max-h-32 overflow-y-auto space-y-1 mb-2">
+            {messages.map((m) => (
+              <div key={m.id} className={`text-sm px-2 py-1 rounded-md max-w-[75%] ${m.from === 'mine' ? 'bg-indigo-950 ml-auto text-right' : 'bg-gray-800'}`}>
+                {m.text}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+              placeholder="Type a message…"
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm"
+            />
+            <button onClick={sendChat} className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-4 text-sm font-medium">
+              Send
+            </button>
+          </div>
         </div>
 
         <div className="flex justify-center gap-3">
