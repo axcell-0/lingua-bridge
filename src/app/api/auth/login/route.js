@@ -24,6 +24,10 @@ export async function POST(request) {
 
         const user = await User.findOne({ email: email.toLowerCase() });
 
+        if (!user.verified) {
+            return Response.json({ error: 'Please verify your email'})
+        }
+
         if (!user) {
             return Response.json({ error: 'Invalid email or password.' }, { status: 401 });
         }

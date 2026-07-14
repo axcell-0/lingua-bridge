@@ -277,79 +277,101 @@ export default function RoomPage() {
     };
   }, [code, router]);
 
-  if (error) {
+ if (error) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center bg-gray-950 text-gray-100 gap-4">
-        <p className="text-red-400">{error}</p>
-        <button onClick={() => router.push('/')} className="text-sm text-gray-400 hover:text-gray-200">Back to dashboard</button>
+      <main className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
+        <p className="text-red-500">{error}</p>
+        <button onClick={() => router.push('/')} className="text-sm text-slate-500 hover:text-slate-800">
+          Back to dashboard
+        </button>
       </main>
     );
   }
 
+  const lastMine = [...captions].reverse().find((c) => c.who === 'mine');
+  const lastTheirs = [...captions].reverse().find((c) => c.who === 'theirs');
+
   return (
-    <main className="min-h-screen bg-gray-950 text-gray-100 flex flex-col items-center p-6">
-      <div className="w-full max-w-3xl">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-sm text-gray-400">Room {code}</span>
-          <span className="text-sm text-gray-300">{status}</span>
+    <main className="min-h-screen bg-slate-100 flex flex-col md:flex-row">
+      <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 p-5 flex flex-col gap-5">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-900">Translation Setup</h1>
+          <p className="text-xs text-slate-500">Configure live audio sync</p>
         </div>
 
-        <div className="relative grid grid-cols-2 gap-2 bg-black rounded-xl overflow-hidden mb-3">
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full aspect-video object-cover [transform:scaleX(-1)]" />
-          <video ref={remoteVideoRef} autoPlay playsInline className="w-full aspect-video object-cover bg-gray-900" />
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-500">You speak</label>
+            <select value={mySpokenLang} onChange={(e) => setMySpokenLang(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-slate-900 mt-1">
+              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500">See their captions in</label>
+            <select value={myCaptionLang} onChange={(e) => setMyCaptionLang(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-sm text-slate-900 mt-1">
+              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Live transcript</h2>
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-64 md:max-h-none">
+            {captions.map((c) => (
+              <div key={c.id} className={`rounded-lg p-2 text-sm ${c.who === 'mine' ? 'bg-teal-50 border border-teal-100 text-slate-800' : 'bg-slate-50 border border-slate-200 text-slate-800'}`}>
+                <span className="text-[10px] uppercase text-slate-400 block">{c.tag}</span>
+                {c.text}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={handleLeave} className="bg-slate-900 hover:bg-black text-white rounded-lg py-2.5 text-sm font-medium transition-colors">
+          Leave meeting
+        </button>
+      </aside>
+
+      <section className="flex-1 flex flex-col p-5">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm text-slate-500">Room <span className="font-mono text-slate-900">{code}</span></span>
+          <span className={`text-xs font-medium px-3 py-1 rounded-full ${status === 'Connected' ? 'bg-teal-100 text-teal-700' : 'bg-slate-200 text-slate-600'}`}>
+            {status}
+          </span>
+        </div>
+
+        <div className="relative flex-1 grid grid-cols-2 gap-2 bg-black rounded-2xl overflow-hidden mb-4 min-h-80">
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover transform-[scaleX(-1)]" />
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover bg-gray-900" />
+
+          {(lastMine || lastTheirs) && (
+            <div className="absolute left-4 right-4 bottom-4 bg-black/70 backdrop-blur rounded-xl p-3 text-sm text-white space-y-1">
+              {lastMine && <p><span className="text-teal-300 text-xs uppercase mr-2">Me</span>{lastMine.text}</p>}
+              {lastTheirs && <p><span className="text-amber-300 text-xs uppercase mr-2">Them</span>{lastTheirs.text}</p>}
+            </div>
+          )}
 
           {floatingReactions.map((r) => (
-            <span
-              key={r.id}
-              className={`absolute bottom-3 text-3xl animate-bounce pointer-events-none ${r.side === 'mine' ? 'left-3' : 'right-3'}`}
-            >
+            <span key={r.id} className={`absolute bottom-3 text-3xl animate-bounce pointer-events-none ${r.side === 'mine' ? 'left-3' : 'right-3'}`}>
               {r.emoji}
             </span>
           ))}
         </div>
 
-        <div className="flex gap-2 mb-3">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">You speak</label>
-            <select value={mySpokenLang} onChange={(e) => setMySpokenLang(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-sm">
-              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
-            </select>
-          </div>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">See their captions in</label>
-            <select value={myCaptionLang} onChange={(e) => setMyCaptionLang(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-sm">
-              {LANGS.map((l) => <option key={l.code} value={l.code}>{l.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 min-h-[100px] mb-3 space-y-1">
-          {captions.map((c) => (
-            <div key={c.id} className={`text-sm p-2 rounded-md ${c.who === 'mine' ? 'bg-indigo-950 border-l-2 border-indigo-500' : 'bg-amber-950 border-l-2 border-amber-500 text-right'}`}>
-              <span className="text-xs text-gray-500 block">{c.tag}</span>
-              {c.text}
-            </div>
-          ))}
-        </div>
-
         <div className="flex gap-2 justify-center mb-3">
           {REACTIONS.map((emoji) => (
-            <button
-              key={emoji}
-              onClick={() => sendReaction(emoji)}
-              className="text-xl bg-gray-800 border border-gray-700 rounded-full w-10 h-10 hover:bg-gray-700"
-            >
+            <button key={emoji} onClick={() => sendReaction(emoji)}
+              className="text-xl bg-white border border-slate-200 shadow-sm rounded-full w-10 h-10 hover:bg-slate-50">
               {emoji}
             </button>
           ))}
         </div>
 
-        <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 mb-3">
-          <div className="max-h-32 overflow-y-auto space-y-1 mb-2">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 mb-4">
+          <div className="max-h-28 overflow-y-auto space-y-1 mb-2">
             {messages.map((m) => (
-              <div key={m.id} className={`text-sm px-2 py-1 rounded-md max-w-[75%] ${m.from === 'mine' ? 'bg-indigo-950 ml-auto text-right' : 'bg-gray-800'}`}>
+              <div key={m.id} className={`text-sm px-2 py-1 rounded-md max-w-[75%] ${m.from === 'mine' ? 'bg-teal-50 ml-auto text-right text-slate-800' : 'bg-slate-100 text-slate-800'}`}>
                 {m.text}
               </div>
             ))}
@@ -361,9 +383,9 @@ export default function RoomPage() {
               onChange={(e) => setChatInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && sendChat()}
               placeholder="Type a message…"
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-md px-3 py-1.5 text-sm"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
             />
-            <button onClick={sendChat} className="bg-indigo-600 hover:bg-indigo-500 rounded-md px-4 text-sm font-medium">
+            <button onClick={sendChat} className="bg-teal-600 hover:bg-teal-500 text-white rounded-lg px-4 text-sm font-medium transition-colors">
               Send
             </button>
           </div>
@@ -371,18 +393,15 @@ export default function RoomPage() {
 
         <div className="flex justify-center gap-3">
           <button onClick={toggleCaptions}
-            className={`rounded-full px-5 py-2 text-sm font-medium ${captionsOn ? 'bg-indigo-600' : 'bg-gray-800 border border-gray-700'}`}>
+            className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${captionsOn ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
             {captionsOn ? 'Stop captioning' : 'Start captioning'}
           </button>
           <button onClick={() => setSpeakOn(!speakOn)}
-            className={`rounded-full px-5 py-2 text-sm font-medium ${speakOn ? 'bg-indigo-600' : 'bg-gray-800 border border-gray-700'}`}>
+            className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${speakOn ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
             {speakOn ? 'Reading aloud' : 'Read aloud'}
           </button>
-          <button onClick={handleLeave} className="bg-red-600 hover:bg-red-500 rounded-full px-5 py-2 text-sm font-medium">
-            Leave
-          </button>
         </div>
-      </div>
+      </section>
     </main>
   );
 }
