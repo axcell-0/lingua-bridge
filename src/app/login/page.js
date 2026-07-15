@@ -150,6 +150,24 @@ export default function LoginPage() {
         )}
 
         {mode !== 'verify' && (
+          <>
+            <div className="flex items-center gap-2 my-4">
+              <div className="h-px bg-slate-200 flex-1" />
+              <span className="text-xs text-slate-400">or</span>
+              <div className="h-px bg-slate-200 flex-1" />
+            </div>
+            <div className="space-y-2">
+              <a href="/api/auth/google" className="flex items-center justify-center w-full border border-slate-200 rounded-lg py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                Continue with Google
+              </a>
+              <a href="/api/auth/github" className="flex items-center justify-center w-full border border-slate-200 rounded-lg py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                Continue with GitHub
+              </a>
+            </div>
+          </>
+        )}
+
+        {mode !== 'verify' && (
           <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setInfo(''); }}
             className="text-sm text-slate-500 mt-4 hover:text-slate-700">
             {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}

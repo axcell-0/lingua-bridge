@@ -16,7 +16,16 @@ const UserSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: true
+        required: function () { return !this.oauthProvider; },
+    },
+    oauthProvider: {
+        type: String,
+        enum: ['google', 'github', null],
+        default: null
+    },
+    oauthId: {
+        type: String,
+        default: null
     },
     verified: {
         type: Boolean,

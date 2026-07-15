@@ -11,9 +11,9 @@ export async function POST(request) {
         const { allowed } = rateLimit(`login:${ip}`, 5, 60_000);
 
         if (!allowed) {
-            return Response.json({ error: 'Too many login attempts, please wait a moment and try again.'}, { status: 429});
+            return Response.json({ error: 'Too many login attempts, please wait a moment and try again.' }, { status: 429 });
         }
-        
+
         const { email, password } = await request.json();
 
         if (!email || !password) {
@@ -25,11 +25,15 @@ export async function POST(request) {
         const user = await User.findOne({ email: email.toLowerCase() });
 
         if (!user.verified) {
-            return Response.json({ error: 'Please verify your email'})
+            return Response.json({ error: 'Please verify your email' })
         }
 
         if (!user) {
             return Response.json({ error: 'Invalid email or password.' }, { status: 401 });
+        }
+
+        if (!user.password) {
+            return Response.json({ error: `This account uses ${user.oauthProvider === 'google' ? 'Google' : 'GitHub'} sign-in. Please use that button instead.` }, { status: 400 });
         }
 
         const passwordMatches = await bcrypt.compare(password, user.password);
@@ -41,7 +45,7 @@ export async function POST(request) {
         const token = jwt.sign(
             { userId: user._id, email: user.email },
             process.env.JWT_SECRET,
-            { expiresIn: '7d'}
+            { expiresIn: '7d' }
         );
 
         const response = Response.json({
@@ -57,6 +61,6 @@ export async function POST(request) {
         return response;
     } catch (error) {
         console.error('Login error:', error);
-        return Response.json({ error: 'Something went wrong.' }, {  status: 500 });
+        return Response.json({ error: 'Something went wrong.' }, { status: 500 });
     }
 }
