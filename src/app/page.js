@@ -2,23 +2,34 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Avatar from '@/components/dashboard/Avatar';
+import StartCallCard from '@/components/dashboard/StartCallCard';
+import RecentActivity from '@/components/dashboard/RecentActivity';
+import UpcomingMeetings from '@/components/dashboard/UpcomingMeetings';
 
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetch('/api/auth/me')
-      .then((res) => {
-        if (!res.ok) throw new Error('not authenticated');
-        return res.json();
-      })
-      .then((data) => setUser(data.user))
-      .catch(() => router.push('/login'))
-      .finally(() => setLoading(false));
+    async function load() {
+      const meRes = await fetch('/api/auth/me');
+      if (!meRes.ok) { router.push('/login'); return; }
+      const { user } = await meRes.json();
+      setUser(user);
+
+      const roomsRes = await fetch('/api/rooms/mine');
+      if (roomsRes.ok) {
+        const { rooms } = await roomsRes.json();
+        setRooms(rooms);
+      }
+      setLoading(false);
+    }
+    load();
   }, [router]);
 
   async function handleCreate() {
@@ -38,6 +49,22 @@ export default function Home() {
     router.push(`/room/${data.room.code}`);
   }
 
+  async function handleSchedule({ title, scheduledFor }) {
+    const res = await fetch('/api/rooms/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, scheduledFor }),
+    });
+    const data = await res.json();
+    if (!res.ok) return { error: data.error };
+    setRooms((prev) => [data.room, ...prev]);
+    return {};
+  }
+
+  function handleStartOrRejoin(code) {
+    router.push(`/room/${code}`);
+  }
+
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
@@ -51,58 +78,38 @@ export default function Home() {
     );
   }
 
+  const now = new Date();
+  const upcoming = rooms.filter((r) => r.status === 'scheduled' && new Date(r.scheduledFor) > now);
+  const recent = rooms.filter((r) => r.status !== 'scheduled');
+
   return (
     <main className="min-h-screen bg-slate-50">
       <div className="flex items-center justify-between px-8 py-5 border-b border-slate-200 bg-white">
         <h1 className="text-lg font-semibold text-slate-900">
           Lingua<span className="text-teal-600">Bridge</span>
         </h1>
-        <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-800">
-          Log out
-        </button>
+        <div className="flex items-center gap-3">
+          <Avatar name={user?.name} />
+          <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-800">
+            Log out
+          </button>
+        </div>
       </div>
 
-      <div className="max-w-3xl mx-auto p-8">
-        <div className="bg-slate-900 rounded-2xl p-8 mb-6 text-white">
-          <h2 className="text-2xl font-semibold mb-2">Connect globally, speak locally.</h2>
-          <p className="text-slate-300 text-sm mb-6 max-w-md">
-            Hi {user?.name} — launch a live, translated video call in seconds.
-          </p>
+      <div className="max-w-3xl mx-auto p-8 space-y-6">
+        <StartCallCard
+          userName={user?.name}
+          joinCode={joinCode}
+          setJoinCode={setJoinCode}
+          onCreate={handleCreate}
+          onJoin={handleJoin}
+          error={error}
+        />
 
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-300 text-sm rounded-lg px-3 py-2 mb-4">
-              {error}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleCreate}
-              className="bg-teal-500 hover:bg-teal-400 text-slate-900 font-medium rounded-lg px-5 py-2.5 text-sm transition-colors"
-            >
-              Start instant meeting
-            </button>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Room code"
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm uppercase placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/50"
-              />
-              <button
-                onClick={handleJoin}
-                className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 text-sm font-medium transition-colors"
-              >
-                Join with code
-              </button>
-            </div>
-          </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <RecentActivity rooms={recent} onRejoin={handleStartOrRejoin} />
+          <UpcomingMeetings rooms={upcoming} onSchedule={handleSchedule} onStart={handleStartOrRejoin} />
         </div>
-
-        <p className="text-xs text-slate-400 text-center">
-          Real-time speech translation, powered by your own microphone and camera.
-        </p>
       </div>
     </main>
   );

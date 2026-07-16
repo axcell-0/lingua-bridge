@@ -2,7 +2,10 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FaGithub, FaGoogle } from "react-icons/fa";
+import WelcomePanel from '@/components/auth/WelcomePanel';
+import CredentialsForm from '@/components/auth/CredentialsForm';
+import VerifyForm from '@/components/auth/VerifyForm';
+import OAuthButtons from '@/components/auth/OAuthButtons';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -97,83 +100,51 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-      <div className="w-full max-w-sm bg-white border border-slate-200 shadow-sm rounded-2xl p-7">
-        <h1 className="text-2xl font-semibold text-slate-900 mb-1">
-          Lingua<span className="text-teal-600">Bridge</span>
-        </h1>
-        <p className="text-slate-500 text-sm mb-6">
-          {mode === 'login' && 'Log in to your account'}
-          {mode === 'signup' && 'Create a new account'}
-          {mode === 'verify' && 'Enter your verification code'}
-        </p>
+    <main className="min-h-screen flex bg-slate-50">
+      <WelcomePanel />
 
-        {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
-        {info && !error && <div className="bg-teal-50 border border-teal-200 text-teal-700 text-sm rounded-lg px-3 py-2 mb-4">{info}</div>}
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm">
+          <div className="md:hidden text-center mb-6">
+            <span className="text-xl font-semibold text-slate-900">
+              Lingua<span className="text-teal-600">Bridge</span>
+            </span>
+          </div>
 
-        {mode === 'verify' ? (
-          <form onSubmit={handleVerify} className="space-y-3">
-            <input
-              type="text"
-              placeholder="6-digit code"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              maxLength={6}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-center tracking-[0.3em] font-mono focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
-              required
-            />
-            <button type="submit" disabled={loading}
-              className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium">
-              {loading ? 'Verifying…' : 'Verify'}
-            </button>
-            <button type="button" onClick={handleResend} className="text-sm text-slate-500 hover:text-slate-700 w-full text-center">
-              Resend code
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            {mode === 'signup' && (
-              <input type="text" placeholder="Name" value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" required />
+          <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-7">
+            <h2 className="text-xl font-semibold text-slate-900 mb-1">
+              {mode === 'login' && 'Welcome back'}
+              {mode === 'signup' && 'Create your account'}
+              {mode === 'verify' && 'Check your email'}
+            </h2>
+            <p className="text-slate-500 text-sm mb-6">
+              {mode === 'login' && 'Log in to start a call'}
+              {mode === 'signup' && 'Takes less than a minute'}
+              {mode === 'verify' && 'Enter your verification code'}
+            </p>
+
+            {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-3 py-2 mb-4">{error}</div>}
+            {info && !error && <div className="bg-teal-50 border border-teal-200 text-teal-700 text-sm rounded-lg px-3 py-2 mb-4">{info}</div>}
+
+            {mode === 'verify' ? (
+              <VerifyForm code={code} setCode={setCode} loading={loading} onSubmit={handleVerify} onResend={handleResend} />
+            ) : (
+              <>
+                <CredentialsForm mode={mode} form={form} setForm={setForm} loading={loading} onSubmit={handleSubmit} />
+                <div className="flex items-center gap-2 my-4">
+                  <div className="h-px bg-slate-200 flex-1" />
+                  <span className="text-xs text-slate-400">or</span>
+                  <div className="h-px bg-slate-200 flex-1" />
+                </div>
+                <OAuthButtons />
+                <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setInfo(''); }}
+                  className="text-sm text-slate-500 mt-4 hover:text-slate-700 w-full text-center">
+                  {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
+                </button>
+              </>
             )}
-            <input type="email" placeholder="Email" value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" required />
-            <input type="password" placeholder="Password" value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500" required minLength={8} />
-            <button type="submit" disabled={loading}
-              className="w-full bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium">
-              {loading ? 'Please wait…' : mode === 'login' ? 'Log in' : 'Sign up'}
-            </button>
-          </form>
-        )}
-
-        {mode !== 'verify' && (
-          <>
-            <div className="flex items-center gap-2 my-4">
-              <div className="h-px bg-slate-200 flex-1" />
-              <span className="text-xs text-slate-400">or</span>
-              <div className="h-px bg-slate-200 flex-1" />
-            </div>
-            <div className="space-y-2">
-              <a href="/api/auth/google" className="flex items-center justify-center w-full border border-slate-200 rounded-lg py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
-                <FaGoogle size={24} color=""/>
-              </a>
-              <a href="/api/auth/github" className="flex items-center justify-center w-full border border-slate-200 rounded-lg py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors">
-                <FaGithub size={24} />
-              </a>
-            </div>
-          </>
-        )}
-
-        {mode !== 'verify' && (
-          <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setInfo(''); }}
-            className="text-sm text-slate-500 mt-4 hover:text-slate-700">
-            {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Log in'}
-          </button>
-        )}
+          </div>
+        </div>
       </div>
     </main>
   );

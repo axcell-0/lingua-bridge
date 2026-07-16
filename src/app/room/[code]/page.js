@@ -164,6 +164,7 @@ export default function RoomPage() {
   }
 
   function handleLeave() {
+    fetch(`/api/rooms/${code}/end`, { method: 'POST' }).catch(() => {});
     if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
     if (pcRef.current) pcRef.current.close();
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
