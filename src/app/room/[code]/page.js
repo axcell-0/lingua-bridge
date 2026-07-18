@@ -20,6 +20,15 @@ const REACTIONS = ['👍', '❤️', '😂', '😮', '👏'];
 const langName = (code) => LANGS.find((l) => l.code === code)?.name || code;
 const langSpeech = (code) => LANGS.find((l) => l.code === code)?.speech || 'en-US';
 
+// Stops a SpeechRecognition instance WITHOUT letting its onend handler
+// restart it — the ref must be cleared first, or onend sees it's still
+// set and calls .start() again right after .stop() fires.
+function stopRecognition(recognitionRef) {
+  const rec = recognitionRef.current;
+  recognitionRef.current = null;
+  if (rec) { try { rec.stop(); } catch (e) {} }
+}
+
 export default function RoomPage() {
   const { code } = useParams();
   const router = useRouter();
@@ -33,9 +42,12 @@ export default function RoomPage() {
 
   const [status, setStatus] = useState('Setting up…');
   const [error, setError] = useState('');
+  const [isHost, setIsHost] = useState(false);
   const [captions, setCaptions] = useState([]);
   const [captionsOn, setCaptionsOn] = useState(false);
   const [speakOn, setSpeakOn] = useState(false);
+  const [micOn, setMicOn] = useState(true);
+  const [hearOriginal, setHearOriginal] = useState(true);
   const [mySpokenLang, setMySpokenLang] = useState('en');
   const [myCaptionLang, setMyCaptionLang] = useState('fr');
   const [messages, setMessages] = useState([]);
@@ -51,6 +63,9 @@ export default function RoomPage() {
   useEffect(() => { myCaptionLangRef.current = myCaptionLang; }, [myCaptionLang]);
   useEffect(() => { speakOnRef.current = speakOn; }, [speakOn]);
   useEffect(() => { sendMeta(); }, [mySpokenLang, myCaptionLang]);
+  useEffect(() => {
+    if (remoteVideoRef.current) remoteVideoRef.current.muted = !hearOriginal;
+  }, [hearOriginal]);
 
   function sendMeta() {
     const ch = dataChannelRef.current;
@@ -73,6 +88,10 @@ export default function RoomPage() {
         setMessages((prev) => [...prev, { id: Date.now() + Math.random(), from: 'theirs', text: msg.text }]);
       } else if (msg.type === 'reaction') {
         showReaction('theirs', msg.emoji);
+      } else if (msg.type === 'force-mute') {
+        const track = localStreamRef.current?.getAudioTracks()[0];
+        if (track) track.enabled = false;
+        setMicOn(false);
       }
     };
   }
@@ -92,9 +111,7 @@ export default function RoomPage() {
     const text = chatInput.trim();
     if (!text) return;
     const ch = dataChannelRef.current;
-    if (ch && ch.readyState === 'open') {
-      ch.send(JSON.stringify({ type: 'chat', text }));
-    }
+    if (ch && ch.readyState === 'open') ch.send(JSON.stringify({ type: 'chat', text }));
     setMessages((prev) => [...prev, { id: Date.now() + Math.random(), from: 'mine', text }]);
     setChatInput('');
   }
@@ -102,17 +119,25 @@ export default function RoomPage() {
   function showReaction(side, emoji) {
     const id = Date.now() + Math.random();
     setFloatingReactions((prev) => [...prev, { id, emoji, side }]);
-    setTimeout(() => {
-      setFloatingReactions((prev) => prev.filter((r) => r.id !== id));
-    }, 1800);
+    setTimeout(() => setFloatingReactions((prev) => prev.filter((r) => r.id !== id)), 1800);
   }
 
   function sendReaction(emoji) {
     const ch = dataChannelRef.current;
-    if (ch && ch.readyState === 'open') {
-      ch.send(JSON.stringify({ type: 'reaction', emoji }));
-    }
+    if (ch && ch.readyState === 'open') ch.send(JSON.stringify({ type: 'reaction', emoji }));
     showReaction('mine', emoji);
+  }
+
+  function toggleMic() {
+    const track = localStreamRef.current?.getAudioTracks()[0];
+    if (!track) return;
+    track.enabled = !track.enabled;
+    setMicOn(track.enabled);
+  }
+
+  function muteOtherParticipant() {
+    const ch = dataChannelRef.current;
+    if (ch && ch.readyState === 'open') ch.send(JSON.stringify({ type: 'force-mute' }));
   }
 
   async function handleRecognizedText(text) {
@@ -156,16 +181,14 @@ export default function RoomPage() {
       recognition.start();
       setCaptionsOn(true);
     } else {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null;
-      if (rec) rec.stop();
+      stopRecognition(recognitionRef);
       setCaptionsOn(false);
     }
   }
 
   function handleLeave() {
     fetch(`/api/rooms/${code}/end`, { method: 'POST' }).catch(() => {});
-    if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
+    stopRecognition(recognitionRef);
     if (pcRef.current) pcRef.current.close();
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     router.push('/');
@@ -186,9 +209,10 @@ export default function RoomPage() {
         return;
       }
       const { room } = await roomRes.json();
-      const isHost = room.host === user._id;
-      const myRole = isHost ? 'host' : 'guest';
-      const otherRole = isHost ? 'guest' : 'host';
+      const hostFlag = room.host === user._id;
+      setIsHost(hostFlag);
+      const myRole = hostFlag ? 'host' : 'guest';
+      const otherRole = hostFlag ? 'guest' : 'host';
 
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       localStreamRef.current = stream;
@@ -206,7 +230,12 @@ export default function RoomPage() {
       pcRef.current = pc;
       stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
-      pc.ontrack = (e) => { if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0]; };
+      pc.ontrack = (e) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+          remoteVideoRef.current.muted = !hearOriginal;
+        }
+      };
       pc.oniceconnectionstatechange = () => {
         if (['connected', 'completed'].includes(pc.iceConnectionState)) setStatus('Connected');
         else if (['disconnected', 'failed'].includes(pc.iceConnectionState)) setStatus('Connection lost…');
@@ -234,7 +263,7 @@ export default function RoomPage() {
         }
       }
 
-      if (isHost) {
+      if (hostFlag) {
         setupDataChannel(pc.createDataChannel('captions'));
 
         const offer = await pc.createOffer();
@@ -272,19 +301,17 @@ export default function RoomPage() {
 
     return () => {
       unsubscribers.forEach((unsub) => typeof unsub === 'function' && unsub());
-      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch (e) {} }
+      stopRecognition(recognitionRef);
       if (pcRef.current) pcRef.current.close();
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     };
   }, [code, router]);
 
- if (error) {
+  if (error) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
         <p className="text-red-500">{error}</p>
-        <button onClick={() => router.push('/')} className="text-sm text-slate-500 hover:text-slate-800">
-          Back to dashboard
-        </button>
+        <button onClick={() => router.push('/')} className="text-sm text-slate-500 hover:text-slate-800">Back to dashboard</button>
       </main>
     );
   }
@@ -317,6 +344,20 @@ export default function RoomPage() {
           </div>
         </div>
 
+        <div className="space-y-2 border-t border-slate-100 pt-4">
+          <label className="flex items-center justify-between text-sm text-slate-700">
+            Hear their original voice
+            <input type="checkbox" checked={hearOriginal} onChange={(e) => setHearOriginal(e.target.checked)} className="accent-teal-600" />
+          </label>
+          <label className="flex items-center justify-between text-sm text-slate-700">
+            Read translated captions aloud
+            <input type="checkbox" checked={speakOn} onChange={(e) => setSpeakOn(e.target.checked)} className="accent-teal-600" />
+          </label>
+          {!hearOriginal && !speakOn && (
+            <p className="text-xs text-amber-600">You won't hear any audio with both of these off.</p>
+          )}
+        </div>
+
         <div className="flex-1 min-h-0 flex flex-col">
           <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Live transcript</h2>
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-64 md:max-h-none">
@@ -343,8 +384,14 @@ export default function RoomPage() {
         </div>
 
         <div className="relative flex-1 grid grid-cols-2 gap-2 bg-black rounded-2xl overflow-hidden mb-4 min-h-80">
-          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover transform-[scaleX(-1)]" />
+          <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover transform:scaleX(-1)" />
           <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover bg-gray-900" />
+
+          {!micOn && (
+            <span className="absolute top-3 left-3 bg-red-600/90 text-white text-xs px-2 py-1 rounded-full">
+              Mic off
+            </span>
+          )}
 
           {(lastMine || lastTheirs) && (
             <div className="absolute left-4 right-4 bottom-4 bg-black/70 backdrop-blur rounded-xl p-3 text-sm text-white space-y-1">
@@ -392,15 +439,21 @@ export default function RoomPage() {
           </div>
         </div>
 
-        <div className="flex justify-center gap-3">
+        <div className="flex justify-center gap-3 flex-wrap">
+          <button onClick={toggleMic}
+            className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${micOn ? 'bg-white border border-slate-200 text-slate-700' : 'bg-red-600 text-white'}`}>
+            {micOn ? 'Mute mic' : 'Unmute mic'}
+          </button>
           <button onClick={toggleCaptions}
             className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${captionsOn ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
             {captionsOn ? 'Stop captioning' : 'Start captioning'}
           </button>
-          <button onClick={() => setSpeakOn(!speakOn)}
-            className={`rounded-full px-5 py-2 text-sm font-medium transition-colors ${speakOn ? 'bg-teal-600 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}>
-            {speakOn ? 'Reading aloud' : 'Read aloud'}
-          </button>
+          {isHost && (
+            <button onClick={muteOtherParticipant}
+              className="rounded-full px-5 py-2 text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50">
+              Mute participant
+            </button>
+          )}
         </div>
       </section>
     </main>
