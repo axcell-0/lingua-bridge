@@ -6,6 +6,7 @@ import Avatar from '@/components/dashboard/Avatar';
 import StartCallCard from '@/components/dashboard/StartCallCard';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 import UpcomingMeetings from '@/components/dashboard/UpcomingMeetings';
+import { CiLogin } from 'react-icons/ci';
 
 export default function Home() {
   const router = useRouter();
@@ -91,7 +92,7 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <Avatar name={user?.name} />
           <button onClick={handleLogout} className="text-sm text-slate-500 hover:text-slate-800">
-            Log out
+            <CiLogin size={24} />
           </button>
         </div>
       </div>
